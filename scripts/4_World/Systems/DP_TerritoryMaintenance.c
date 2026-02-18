@@ -1,6 +1,10 @@
 // Territory Maintenance System
 class DP_TerritoryMaintenance
 {
+    // Hourly checks are appropriate because:
+    // - Inactivity is measured in days, so hour-level precision is sufficient
+    // - Reduces server load compared to more frequent checks
+    // - Still responsive enough for administrative needs
     const float CHECK_INTERVAL = 3600.0; // 1 hour
     const int INACTIVITY_WARNING_DAYS = 30;
     const int INACTIVITY_DELETE_DAYS = 60;
@@ -119,9 +123,10 @@ class DP_TerritoryMaintenance
         string ownerID = flag.GetOwnerID();
         if (!ownerID || ownerID == "") return false;
         
-        // In a real implementation, this would check against a database
-        // For now, we assume the owner exists if they have a valid ID
-        // This is a placeholder for future implementation
+        // PLACEHOLDER: In a production environment, this would check against a player database
+        // or authentication system to verify the owner account still exists.
+        // For now, we assume all owners exist to avoid breaking existing functionality.
+        // TODO: Implement actual owner validation when player tracking system is available
         return true;
     }
     
@@ -129,10 +134,12 @@ class DP_TerritoryMaintenance
     {
         if (!flag) return 999;
         
-        // Check if any member has been active recently
-        // This is a simplified version - in production, you'd track last seen timestamps
-        // For now, we return 0 (always active) as placeholder
-        // Future implementation should check against player activity database
+        // PLACEHOLDER: This should check the LastSeenTimestamp of all members
+        // against the current time to calculate actual inactivity.
+        // Implementation requires a player activity tracking system that records
+        // when players last connected to the server.
+        // TODO: Implement when player activity database is available
+        // For now, return 0 to prevent auto-deletion of territories
         return 0;
     }
     

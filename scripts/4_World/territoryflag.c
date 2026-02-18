@@ -891,26 +891,15 @@ modded class TerritoryFlag
         if (!super.OnStoreLoad(ctx, version)) return false; 
         if (!ctx.Read(m_OwnerID)) return false; 
         if (!ctx.Read(m_IsOwned)) return false; 
+        
+        // Try to read as new format first
         if (!ctx.Read(m_Members)) 
         {
-            // Migration: Try to read old format (array<string>)
-            array<string> oldMembers;
-            if (ctx.Read(oldMembers))
-            {
-                // Convert old members to new format
-                m_Members = new array<ref DP_TerritoryMember>();
-                for (int i = 0; i < oldMembers.Count(); i++)
-                {
-                    DP_TerritoryMember member = new DP_TerritoryMember(oldMembers.Get(i), DP_TerritoryRole.BUILDER);
-                    m_Members.Insert(member);
-                }
-                Print("[DP_Territory] Migrated old member format to new format");
-            }
-            else
-            {
-                m_Members = new array<ref DP_TerritoryMember>();
-            }
+            // Failed to read as new format, initialize empty
+            m_Members = new array<ref DP_TerritoryMember>();
+            Print("[DP_Territory] Initialized new member array format");
         }
+        
         if (!ctx.Read(m_Subzones)) m_Subzones = new array<ref DP_TerritorySubzone>();
         if (!ctx.Read(m_Level)) m_Level = 1; 
         if (!ctx.Read(m_PreservationLevel)) m_PreservationLevel = 0; 

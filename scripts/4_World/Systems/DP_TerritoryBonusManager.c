@@ -77,43 +77,43 @@ class DP_TerritoryBonusManager
         // Level 1+: Slower hunger/thirst depletion
         if (level >= 1)
         {
-            PlayerStat hunger = player.GetStatWater();
-            PlayerStat thirst = player.GetStatEnergy();
+            PlayerStat energy = player.GetStatEnergy();  // Hunger
+            PlayerStat water = player.GetStatWater();    // Thirst
             
-            if (hunger)
+            if (energy)
             {
-                hunger.Add(0.5); // Slower depletion
+                energy.Add(0.5); // Slower depletion
             }
             
-            if (thirst)
+            if (water)
             {
-                thirst.Add(0.5); // Slower depletion
+                water.Add(0.5); // Slower depletion
             }
         }
         
-        // Level 2+: Health regeneration + 10%, Crafting speed +5%
+        // Level 2+: Health regeneration + crafting speed bonuses
         if (level >= 2)
         {
+            float regenAmount = 0.1; // Base regeneration for level 2
+            
+            // Level 3: Enhanced regeneration
+            if (level >= 3)
+            {
+                regenAmount = 0.15;
+            }
+            
             float currentHealth = player.GetHealth("", "Health");
             float maxHealth = player.GetMaxHealth("", "Health");
             
             if (currentHealth < maxHealth)
             {
-                player.AddHealth("", "Health", 0.1); // 0.1 HP/sec
+                player.AddHealth("", "Health", regenAmount);
             }
         }
         
-        // Level 3: Enhanced bonuses + zombie invisibility
+        // Level 3: Zombie invisibility
         if (level >= 3)
         {
-            float currentHealth = player.GetHealth("", "Health");
-            float maxHealth = player.GetMaxHealth("", "Health");
-            
-            if (currentHealth < maxHealth)
-            {
-                player.AddHealth("", "Health", 0.15); // 0.15 HP/sec total (overrides level 2)
-            }
-            
             // Zombie invisibility within 20m of flag
             vector flagPos = flag.GetPosition();
             float distToFlag = vector.Distance(player.GetPosition(), flagPos);
