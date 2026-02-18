@@ -41,6 +41,34 @@ modded class ActionDeployObject
         }
         return true;
     }
+    
+    override void OnFinishProgressServer(ActionData action_data)
+    {
+        super.OnFinishProgressServer(action_data);
+        
+        // Invalidate cache after building
+        if (GetGame().IsServer() && action_data.m_Player)
+        {
+            DP_TerritoryCache cache = DP_TerritoryCache.GetInstance();
+            if (cache)
+            {
+                DP_TerritoryManager tm = DP_TerritoryManager.TM_GetInstance();
+                if (tm)
+                {
+                    float maxR = DP_TerritoryConfig.Get().GetMaxPossibleRadius();
+                    Object flagObj = tm.TM_GetNearestFlag(action_data.m_Player.GetPosition(), maxR);
+                    if (flagObj)
+                    {
+                        TerritoryFlag flag = TerritoryFlag.Cast(flagObj);
+                        if (flag)
+                        {
+                            cache.InvalidateCache(flag);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 modded class ActionContinuousBase
