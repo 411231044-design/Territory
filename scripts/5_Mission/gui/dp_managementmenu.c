@@ -154,7 +154,12 @@ class DP_ManagementMenu : UIScriptedMenu
             m_MembersList.ClearItems(); 
             for (int i = 0; i < m_TargetFlag.m_Members.Count(); i++) 
             {
-                m_MembersList.AddItem(m_TargetFlag.m_Members.Get(i), NULL, 0); 
+                DP_TerritoryMember member = m_TargetFlag.m_Members.Get(i);
+                if (member)
+                {
+                    string displayText = member.PlayerID + " [" + DP_TerritoryRole.GetRoleName(member.Role) + "]";
+                    m_MembersList.AddItem(displayText, NULL, 0); 
+                }
             }
         }
     }
@@ -164,18 +169,35 @@ class DP_ManagementMenu : UIScriptedMenu
         DP_LevelDefinition lvlDef = DP_TerritoryConfig.Get().GetLevelConfig(lvl);
         if (!lvlDef) return;
 
-        float currentR = m_TargetFlag.GetCurrentRadius();
-        array<Object> objects = new array<Object>;
-        array<CargoBase> proxyCargos = new array<CargoBase>;
-        GetGame().GetObjectsAtPosition(m_TargetFlag.GetPosition(), currentR, objects, proxyCargos);
-
         int walls = 0; int tents = 0; int furn = 0;
-        foreach(Object obj : objects)
+        
+        // Try to use cache first for performance
+        DP_TerritoryCache cache = DP_TerritoryCache.GetInstance();
+        if (cache)
         {
-            if (obj == m_TargetFlag) continue;
-            if (!IsPlacedObjectMenu(obj)) continue;
-            int cat = DP_TerritoryConfig.Get().GetItemCategory(obj.GetType());
-            if (cat == 1) walls++; if (cat == 2) tents++; if (cat == 3) furn++;
+            DP_TerritoryCacheEntry entry = cache.GetCacheEntry(m_TargetFlag);
+            if (entry)
+            {
+                walls = entry.WallCount;
+                tents = entry.TentCount;
+                furn = entry.FurnitureCount;
+            }
+        }
+        else
+        {
+            // Fallback: Count manually if cache not available
+            float currentR = m_TargetFlag.GetCurrentRadius();
+            array<Object> objects = new array<Object>;
+            array<CargoBase> proxyCargos = new array<CargoBase>;
+            GetGame().GetObjectsAtPosition(m_TargetFlag.GetPosition(), currentR, objects, proxyCargos);
+
+            foreach(Object obj : objects)
+            {
+                if (obj == m_TargetFlag) continue;
+                if (!IsPlacedObjectMenu(obj)) continue;
+                int cat = DP_TerritoryConfig.Get().GetItemCategory(obj.GetType());
+                if (cat == 1) walls++; if (cat == 2) tents++; if (cat == 3) furn++;
+            }
         }
 
         // НОВАЯ ЛОГИКА: Получаем суммарный бонус территории
@@ -193,7 +215,32 @@ class DP_ManagementMenu : UIScriptedMenu
         text += "(База: " + lvlDef.MaxTents + " +" + (int)totalBonusPercent + "%)\n\n";
         
         text += "МЕБЕЛЬ: " + furn + " / " + (lvlDef.MaxFurniture + bonusFurniture) + "\n";
-        text += "(База: " + lvlDef.MaxFurniture + " +" + (int)totalBonusPercent + "%)\n";
+        text += "(База: " + lvlDef.MaxFurniture + " +" + (int)totalBonusPercent + "%)\n\n";
+        
+        // Show active bonuses
+        text += "=== БОНУСЫ ===\n";
+        if (lvl >= 1)
+        {
+            text += "✓ Медленный голод/жажда\n";
+        }
+        if (lvl >= 2)
+        {
+            text += "✓ Регенерация +10%\n";
+            text += "✓ Крафт +5%\n";
+        }
+        if (lvl >= 3)
+        {
+            text += "✓ Регенерация +15%\n";
+            text += "✓ Крафт +10%\n";
+            text += "✓ Невидимость от зомби\n";
+        }
+        
+        // Show subzone info
+        if (m_TargetFlag.m_Subzones && m_TargetFlag.m_Subzones.Count() > 0)
+        {
+            text += "\n=== СУБЗОНЫ ===\n";
+            text += "Всего: " + m_TargetFlag.m_Subzones.Count() + "\n";
+        }
 
         if (m_LimitsInfo) m_LimitsInfo.SetText(text);
     }
@@ -378,9 +425,15 @@ class DP_ManagementMenu : UIScriptedMenu
             int kRow = m_MembersList.GetSelectedRow(); 
             if (kRow != -1) 
             { 
-                string idToRemove; 
-                m_MembersList.GetItemText(kRow, 0, idToRemove); 
-                m_TargetFlag.RequestRemoveMember(idToRemove); 
+                // Get the member from the array directly
+                if (m_TargetFlag.m_Members && kRow < m_TargetFlag.m_Members.Count())
+                {
+                    DP_TerritoryMember member = m_TargetFlag.m_Members.Get(kRow);
+                    if (member)
+                    {
+                        m_TargetFlag.RequestRemoveMember(member.PlayerID);
+                    }
+                }
             } 
             return true; 
         }

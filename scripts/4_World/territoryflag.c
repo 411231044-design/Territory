@@ -7,12 +7,17 @@ modded class TerritoryFlag
     static const int RPC_ADD_MEMBER       = 35470;
     static const int RPC_REM_MEMBER       = 35471;
     static const int RPC_UPGRADE          = 35472;
+    static const int RPC_CHANGE_ROLE      = 35473;
+    static const int RPC_CREATE_SUBZONE   = 35474;
+    static const int RPC_DELETE_SUBZONE   = 35475;
+    static const int RPC_EXTEND_SUBZONE   = 35476;
 
     protected string m_OwnerID; 
     protected bool m_IsOwned;
     protected int m_Level;
     protected int m_PreservationLevel; 
-    ref array<string> m_Members; 
+    ref array<ref DP_TerritoryMember> m_Members; 
+    ref array<ref DP_TerritorySubzone> m_Subzones;
     ref array<ref DP_CostItem> m_ClientNextLevelCost; 
 
     void TerritoryFlag()
@@ -21,7 +26,8 @@ modded class TerritoryFlag
         m_IsOwned = false;
         m_Level = 1;
         m_PreservationLevel = 0;
-        m_Members = new array<string>();
+        m_Members = new array<ref DP_TerritoryMember>();
+        m_Subzones = new array<ref DP_TerritorySubzone>();
         m_ClientNextLevelCost = new array<ref DP_CostItem>;
         
         RegisterNetSyncVariableBool("m_IsOwned");
@@ -74,8 +80,193 @@ modded class TerritoryFlag
     bool HasPermissions(string playerID) 
     { 
         if (playerID == m_OwnerID) return true; 
-        if (m_Members) { if (m_Members.Find(playerID) != -1) return true; } 
-        return false; 
+        if (m_Members) 
+        { 
+            for (int i = 0; i < m_Members.Count(); i++)
+            {
+                DP_TerritoryMember member = m_Members.Get(i);
+                if (member && member.PlayerID == playerID) return true;
+            }
+        }
+        
+        // Check subzone permissions
+        return HasSubzonePermissions(playerID);
+    }
+    
+    // New role-based methods
+    array<ref DP_TerritoryMember> GetMembers()
+    {
+        return m_Members;
+    }
+    
+    array<ref DP_TerritorySubzone> GetSubzones()
+    {
+        return m_Subzones;
+    }
+    
+    int GetPlayerRole(string playerID)
+    {
+        if (playerID == m_OwnerID) return DP_TerritoryRole.OWNER;
+        
+        if (m_Members)
+        {
+            for (int i = 0; i < m_Members.Count(); i++)
+            {
+                DP_TerritoryMember member = m_Members.Get(i);
+                if (member && member.PlayerID == playerID)
+                {
+                    return member.Role;
+                }
+            }
+        }
+        
+        return -1; // Not a member
+    }
+    
+    bool CanBuild(string playerID)
+    {
+        int role = GetPlayerRole(playerID);
+        if (role == -1) return HasSubzonePermissions(playerID); // Check subzone
+        return DP_TerritoryRole.CanBuild(role);
+    }
+    
+    bool CanManageMembers(string playerID)
+    {
+        int role = GetPlayerRole(playerID);
+        if (role == -1) return false;
+        return DP_TerritoryRole.CanManageMembers(role);
+    }
+    
+    bool CanManageSubzones(string playerID)
+    {
+        int role = GetPlayerRole(playerID);
+        if (role == -1) return false;
+        return DP_TerritoryRole.CanManageSubzones(role);
+    }
+    
+    bool ChangeRole(string playerID, int newRole)
+    {
+        if (!m_Members) return false;
+        
+        for (int i = 0; i < m_Members.Count(); i++)
+        {
+            DP_TerritoryMember member = m_Members.Get(i);
+            if (member && member.PlayerID == playerID)
+            {
+                member.Role = newRole;
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    // Subzone methods
+    bool HasSubzonePermissions(string playerID)
+    {
+        if (!m_Subzones) return false;
+        
+        for (int i = 0; i < m_Subzones.Count(); i++)
+        {
+            DP_TerritorySubzone subzone = m_Subzones.Get(i);
+            if (subzone && subzone.RenterID == playerID && !subzone.IsExpired())
+            {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    DP_TerritorySubzone GetPlayerSubzone(string playerID)
+    {
+        if (!m_Subzones) return null;
+        
+        for (int i = 0; i < m_Subzones.Count(); i++)
+        {
+            DP_TerritorySubzone subzone = m_Subzones.Get(i);
+            if (subzone && subzone.RenterID == playerID && !subzone.IsExpired())
+            {
+                return subzone;
+            }
+        }
+        
+        return null;
+    }
+    
+    bool CreateSubzone(string renterID, vector pos, float radius, int days, int price)
+    {
+        if (m_Level < 2) return false; // Must be level 2+
+        if (!m_Subzones) m_Subzones = new array<ref DP_TerritorySubzone>();
+        
+        DP_TerritorySubzone subzone = new DP_TerritorySubzone(renterID, pos, radius, days, price);
+        m_Subzones.Insert(subzone);
+        
+        return true;
+    }
+    
+    bool RemoveSubzone(string renterID)
+    {
+        if (!m_Subzones) return false;
+        
+        for (int i = 0; i < m_Subzones.Count(); i++)
+        {
+            DP_TerritorySubzone subzone = m_Subzones.Get(i);
+            if (subzone && subzone.RenterID == renterID)
+            {
+                m_Subzones.Remove(i);
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    bool ExtendSubzone(string renterID, int additionalDays)
+    {
+        if (!m_Subzones) return false;
+        
+        for (int i = 0; i < m_Subzones.Count(); i++)
+        {
+            DP_TerritorySubzone subzone = m_Subzones.Get(i);
+            if (subzone && subzone.RenterID == renterID)
+            {
+                subzone.ExtendDuration(additionalDays);
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    void TransferOwnership(string newOwnerID)
+    {
+        // Remove from members if they were a member
+        if (m_Members)
+        {
+            for (int i = m_Members.Count() - 1; i >= 0; i--)
+            {
+                DP_TerritoryMember member = m_Members.Get(i);
+                if (member && member.PlayerID == newOwnerID)
+                {
+                    m_Members.Remove(i);
+                    break;
+                }
+            }
+        }
+        
+        // Change ownership
+        string oldOwnerID = m_OwnerID;
+        m_OwnerID = newOwnerID;
+        
+        // Optionally add old owner as admin
+        if (oldOwnerID != "")
+        {
+            DP_TerritoryMember oldOwnerMember = new DP_TerritoryMember(oldOwnerID, DP_TerritoryRole.ADMIN);
+            m_Members.Insert(oldOwnerMember);
+        }
+        
+        SetSynchDirty();
     }
     
     bool HasOwner() { return m_IsOwned; }
@@ -102,12 +293,15 @@ modded class TerritoryFlag
         {
             for (int i = 0; i < m_Members.Count(); i++)
             {
-                string memberID = m_Members.Get(i);
-                PlayerBase member = GetPlayerByUID(memberID);
-                if (member && member.GetTerjeSkills())
+                DP_TerritoryMember member = m_Members.Get(i);
+                if (!member) continue;
+                
+                string memberID = member.PlayerID;
+                PlayerBase memberPlayer = GetPlayerByUID(memberID);
+                if (memberPlayer && memberPlayer.GetTerjeSkills())
                 {
                     float memberBonus = 0;
-                    member.GetTerjeSkills().GetPerkValue("Skill_Architect", "Perk_Foreman", memberBonus);
+                    memberPlayer.GetTerjeSkills().GetPerkValue("Skill_Architect", "Perk_Foreman", memberBonus);
                     totalBonus += memberBonus;
                 }
             }
@@ -140,11 +334,11 @@ modded class TerritoryFlag
     void RequestClaim() { if (GetGame().IsClient()) GetGame().RPCSingleParam(this, RPC_CLAIM_TERRITORY, null, true); }
     void RequestDelete() { if (GetGame().IsClient()) GetGame().RPCSingleParam(this, RPC_DELETE_TERRITORY, null, true); }
     void RequestUpgrade() { if (GetGame().IsClient()) GetGame().RPCSingleParam(this, RPC_UPGRADE, null, true); }
-    void RequestAddMember(string id) 
+    void RequestAddMember(string id, int role = DP_TerritoryRole.BUILDER) 
     { 
         if (GetGame().IsClient() && IsValidPlayerId(id)) 
         {
-            GetGame().RPCSingleParam(this, RPC_ADD_MEMBER, new Param1<string>(id), true); 
+            GetGame().RPCSingleParam(this, RPC_ADD_MEMBER, new Param2<string, int>(id, role), true); 
         }
     }
     
@@ -210,6 +404,10 @@ modded class TerritoryFlag
                 // Исправленное сообщение в чат
                 player.MessageImportant("✅ Территория захвачена! Радиус: " + GetCurrentRadius() + "м");
                 
+                // Log the claim
+                string playerName = player.GetIdentity().GetName();
+                DP_TerritoryLogger.LogClaim(senderID, playerName, this.GetPosition(), m_Level);
+                
                 UpdatePerkCache(player); 
                 SendSyncToClient(sender);
                 return;
@@ -217,7 +415,7 @@ modded class TerritoryFlag
 
             if (rpc_type == RPC_ADD_MEMBER)
             {
-                Param1<string> pAdd; 
+                Param2<string, int> pAdd; 
                 if (ctx.Read(pAdd) && senderID == m_OwnerID) 
                 { 
                     // Validate the player ID
@@ -225,11 +423,35 @@ modded class TerritoryFlag
                     {
                         player.MessageImportant("⛔ Недопустимый ID игрока!");
                         Print(string.Format("[DP_Territory SECURITY] Invalid player ID attempt: %1", pAdd.param1));
+                        DP_TerritoryLogger.LogSecurity(string.Format("Invalid player ID attempt by %1: %2", senderID, pAdd.param1));
                         return;
                     }
                     
+                    string targetID = pAdd.param1;
+                    int role = pAdd.param2;
+                    
+                    // Default to BUILDER if invalid role
+                    if (role < DP_TerritoryRole.ADMIN || role > DP_TerritoryRole.GUEST)
+                    {
+                        role = DP_TerritoryRole.BUILDER;
+                    }
+                    
                     // Check if already a member
-                    if (m_Members.Find(pAdd.param1) == -1) 
+                    bool alreadyMember = false;
+                    if (m_Members)
+                    {
+                        for (int i = 0; i < m_Members.Count(); i++)
+                        {
+                            DP_TerritoryMember member = m_Members.Get(i);
+                            if (member && member.PlayerID == targetID)
+                            {
+                                alreadyMember = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (!alreadyMember) 
                     { 
                         int maxMembers = DP_TerritoryConstants.DEFAULT_MAX_MEMBERS;
                         float bonusMembers = 0;
@@ -247,10 +469,16 @@ modded class TerritoryFlag
                             return;
                         }
 
-                        m_Members.Insert(pAdd.param1); 
+                        DP_TerritoryMember newMember = new DP_TerritoryMember(targetID, role);
+                        m_Members.Insert(newMember); 
                         SetSynchDirty(); SendSyncToClient(sender); 
-                        player.MessageImportant("✅ Добавлен (" + m_Members.Count() + "/" + totalLimit + ")");
-                        Print(string.Format("[DP_Territory] Player %1 added member %2", senderID, pAdd.param1));
+                        player.MessageImportant("✅ Добавлен (" + m_Members.Count() + "/" + totalLimit + ") - " + DP_TerritoryRole.GetRoleName(role));
+                        
+                        // Log the action
+                        string playerName = player.GetIdentity().GetName();
+                        DP_TerritoryLogger.LogAddMember(senderID, playerName, targetID, role, this.GetPosition());
+                        
+                        Print(string.Format("[DP_Territory] Player %1 added member %2 with role %3", senderID, targetID, role));
                     }
                     else
                     {
@@ -315,9 +543,15 @@ modded class TerritoryFlag
 
                 ConsumeResourcesFlag(discountedCosts);
                 
+                int oldLevel = m_Level;
                 m_Level = nextLevelInt; 
                 SetSynchDirty(); SendSyncToClient(sender);
                 player.MessageImportant("✅ Уровень " + m_Level + "! (Скидка " + (int)discountPercent + "%)");
+                
+                // Log the upgrade
+                string playerName = player.GetIdentity().GetName();
+                DP_TerritoryLogger.LogUpgrade(senderID, playerName, this.GetPosition(), oldLevel, m_Level);
+                
                 return;
             }
 
@@ -325,6 +559,10 @@ modded class TerritoryFlag
             { 
                 if (senderID == m_OwnerID) 
                 { 
+                    // Log the deletion
+                    string playerName = player.GetIdentity().GetName();
+                    DP_TerritoryLogger.LogDelete(senderID, playerName, this.GetPosition());
+                    
                     DP_TerritoryManager.TM_GetInstance().TM_UnregisterByOwnerId(m_OwnerID); 
                     GetGame().ObjectDelete(this); 
                 } 
@@ -341,16 +579,35 @@ modded class TerritoryFlag
                     {
                         player.MessageImportant("⛔ Недопустимый ID игрока!");
                         Print(string.Format("[DP_Territory SECURITY] Invalid player ID in remove: %1", pRem.param1));
+                        DP_TerritoryLogger.LogSecurity(string.Format("Invalid player ID in remove by %1: %2", senderID, pRem.param1));
                         return;
                     }
                     
-                    int idx = m_Members.Find(pRem.param1); 
-                    if (idx != -1) 
+                    bool found = false;
+                    if (m_Members)
+                    {
+                        for (int i = m_Members.Count() - 1; i >= 0; i--)
+                        {
+                            DP_TerritoryMember member = m_Members.Get(i);
+                            if (member && member.PlayerID == pRem.param1)
+                            {
+                                m_Members.Remove(i);
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (found) 
                     { 
-                        m_Members.Remove(idx); 
                         SetSynchDirty(); 
                         SendSyncToClient(sender);
                         player.MessageImportant("✅ Игрок исключен!");
+                        
+                        // Log the action
+                        string playerName = player.GetIdentity().GetName();
+                        DP_TerritoryLogger.LogRemoveMember(senderID, playerName, pRem.param1, this.GetPosition());
+                        
                         Print(string.Format("[DP_Territory] Player %1 removed member %2", senderID, pRem.param1));
                     }
                     else
@@ -359,6 +616,129 @@ modded class TerritoryFlag
                     }
                 } 
                 return; 
+            }
+            
+            if (rpc_type == RPC_CHANGE_ROLE)
+            {
+                Param2<string, int> pRole;
+                if (ctx.Read(pRole) && CanManageMembers(senderID))
+                {
+                    string targetID = pRole.param1;
+                    int newRole = pRole.param2;
+                    
+                    // Validate role
+                    if (newRole < DP_TerritoryRole.ADMIN || newRole > DP_TerritoryRole.GUEST)
+                    {
+                        player.MessageImportant("⛔ Недопустимая роль!");
+                        return;
+                    }
+                    
+                    // Get old role
+                    int oldRole = GetPlayerRole(targetID);
+                    
+                    if (ChangeRole(targetID, newRole))
+                    {
+                        SetSynchDirty();
+                        SendSyncToClient(sender);
+                        player.MessageImportant("✅ Роль изменена: " + DP_TerritoryRole.GetRoleName(newRole));
+                        
+                        // Log the action
+                        string playerName = player.GetIdentity().GetName();
+                        DP_TerritoryLogger.LogChangeRole(senderID, playerName, targetID, oldRole, newRole, this.GetPosition());
+                    }
+                    else
+                    {
+                        player.MessageImportant("⛔ Игрок не найден!");
+                    }
+                }
+                return;
+            }
+            
+            if (rpc_type == RPC_CREATE_SUBZONE)
+            {
+                Param4<string, float, int, int> pSubzone;
+                if (ctx.Read(pSubzone) && senderID == m_OwnerID)
+                {
+                    if (m_Level < 2)
+                    {
+                        player.MessageImportant("⛔ Нужен уровень 2+!");
+                        return;
+                    }
+                    
+                    string renterID = pSubzone.param1;
+                    float radius = pSubzone.param2;
+                    int days = pSubzone.param3;
+                    int price = pSubzone.param4;
+                    
+                    // Validate parameters
+                    if (radius < 10.0 || radius > 20.0)
+                    {
+                        player.MessageImportant("⛔ Радиус должен быть 10-20м!");
+                        return;
+                    }
+                    
+                    vector subzonePos = player.GetPosition();
+                    
+                    if (CreateSubzone(renterID, subzonePos, radius, days, price))
+                    {
+                        SetSynchDirty();
+                        player.MessageImportant("✅ Субзона создана!");
+                        
+                        // Log the action
+                        string playerName = player.GetIdentity().GetName();
+                        DP_TerritoryLogger.LogCreateSubzone(senderID, playerName, renterID, subzonePos, radius, days, this.GetPosition());
+                    }
+                    else
+                    {
+                        player.MessageImportant("⛔ Ошибка создания!");
+                    }
+                }
+                return;
+            }
+            
+            if (rpc_type == RPC_DELETE_SUBZONE)
+            {
+                Param1<string> pDelSubzone;
+                if (ctx.Read(pDelSubzone) && CanManageSubzones(senderID))
+                {
+                    string renterID = pDelSubzone.param1;
+                    
+                    if (RemoveSubzone(renterID))
+                    {
+                        SetSynchDirty();
+                        player.MessageImportant("✅ Субзона удалена!");
+                        
+                        // Log the action
+                        string playerName = player.GetIdentity().GetName();
+                        DP_TerritoryLogger.LogDeleteSubzone(senderID, playerName, renterID, this.GetPosition());
+                    }
+                    else
+                    {
+                        player.MessageImportant("⛔ Субзона не найдена!");
+                    }
+                }
+                return;
+            }
+            
+            if (rpc_type == RPC_EXTEND_SUBZONE)
+            {
+                Param2<string, int> pExtSubzone;
+                if (ctx.Read(pExtSubzone) && senderID == m_OwnerID)
+                {
+                    string renterID = pExtSubzone.param1;
+                    int additionalDays = pExtSubzone.param2;
+                    
+                    if (ExtendSubzone(renterID, additionalDays))
+                    {
+                        SetSynchDirty();
+                        player.MessageImportant("✅ Субзона продлена на " + additionalDays + " дней!");
+                    }
+                    else
+                    {
+                        player.MessageImportant("⛔ Субзона не найдена!");
+                    }
+                }
+                return;
             }
             
             if (rpc_type == RPC_REQ_DATA) 
@@ -501,6 +881,7 @@ modded class TerritoryFlag
         ctx.Write(m_OwnerID); 
         ctx.Write(m_IsOwned); 
         ctx.Write(m_Members); 
+        ctx.Write(m_Subzones);
         ctx.Write(m_Level); 
         ctx.Write(m_PreservationLevel); 
     }
@@ -510,7 +891,16 @@ modded class TerritoryFlag
         if (!super.OnStoreLoad(ctx, version)) return false; 
         if (!ctx.Read(m_OwnerID)) return false; 
         if (!ctx.Read(m_IsOwned)) return false; 
-        if (!ctx.Read(m_Members)) return false; 
+        
+        // Try to read as new format first
+        if (!ctx.Read(m_Members)) 
+        {
+            // Failed to read as new format, initialize empty
+            m_Members = new array<ref DP_TerritoryMember>();
+            Print("[DP_Territory] Initialized new member array format");
+        }
+        
+        if (!ctx.Read(m_Subzones)) m_Subzones = new array<ref DP_TerritorySubzone>();
         if (!ctx.Read(m_Level)) m_Level = 1; 
         if (!ctx.Read(m_PreservationLevel)) m_PreservationLevel = 0; 
         if (m_IsOwned && m_OwnerID != "") DP_TerritoryManager.TM_GetInstance().TM_RegisterOwner_Unique(m_OwnerID, this); 
