@@ -102,36 +102,51 @@ class DP_TerritoryManager
         DP_ItemLimit customLimit = DP_TerritoryConfig.Get().GetCustomLimit(itemClassname, lvl);
         
         // ВСЕ переменные объявляем ОДИН РАЗ в начале метода
-        float currentR = flag.GetCurrentRadius();
-        array<Object> objects = new array<Object>;
-        array<CargoBase> proxyCargos = new array<CargoBase>;
         int currentCount = 0;
         float totalBonusPercent = 0.0;
-        int bonusSlots = 0;  // ОБЪЯВЛЯЕМ ЗДЕСЬ
-        int maxLimit = 0;    // ОБЪЯВЛЯЕМ ЗДЕСЬ
-        int i;
-        Object obj;
+        int bonusSlots = 0;
+        int maxLimit = 0;
         string limitMessage = "";
         int category = 0;
         int baseLimit = 999999;
         
-        GetGame().GetObjectsAtPosition(flag.GetPosition(), currentR, objects, proxyCargos);
+        // Try to use cache first
+        DP_TerritoryCache cache = DP_TerritoryCache.GetInstance();
+        bool usedCache = false;
         
         if (customLimit)
         {
             // Предмет имеет индивидуальный лимит
             currentCount = 0;
             
-            // Считаем только этот конкретный предмет
-            for (i = 0; i < objects.Count(); i++)
+            // Try to get from cache
+            if (cache)
             {
-                obj = objects.Get(i);
-                if (!obj) continue;
-                if (!IsPlacedObject(obj)) continue;
-                
-                if (GetGame().IsKindOf(obj.GetType(), customLimit.ClassName))
+                DP_TerritoryCacheEntry entry = cache.GetCacheEntry(flag);
+                if (entry && entry.CustomItemCounts.Find(customLimit.ClassName, currentCount))
                 {
-                    currentCount++;
+                    usedCache = true;
+                }
+            }
+            
+            // Fallback: Count manually if not in cache
+            if (!usedCache)
+            {
+                float currentR = flag.GetCurrentRadius();
+                array<Object> objects = new array<Object>;
+                array<CargoBase> proxyCargos = new array<CargoBase>;
+                GetGame().GetObjectsAtPosition(flag.GetPosition(), currentR, objects, proxyCargos);
+                
+                for (int i = 0; i < objects.Count(); i++)
+                {
+                    Object obj = objects.Get(i);
+                    if (!obj) continue;
+                    if (!IsPlacedObject(obj)) continue;
+                    
+                    if (GetGame().IsKindOf(obj.GetType(), customLimit.ClassName))
+                    {
+                        currentCount++;
+                    }
                 }
             }
             
@@ -169,6 +184,36 @@ class DP_TerritoryManager
 
         currentCount = 0;
         
+        // Try to get from cache
+        if (cache)
+        {
+            DP_TerritoryCacheEntry entry = cache.GetCacheEntry(flag);
+            if (entry)
+            {
+                if (category == 1) currentCount = entry.WallCount;
+                else if (category == 2) currentCount = entry.TentCount;
+                else if (category == 3) currentCount = entry.FurnitureCount;
+                usedCache = true;
+            }
+        }
+        
+        // Fallback: Count manually if not in cache
+        if (!usedCache)
+        {
+            float currentR = flag.GetCurrentRadius();
+            array<Object> objects = new array<Object>;
+            array<CargoBase> proxyCargos = new array<CargoBase>;
+            GetGame().GetObjectsAtPosition(flag.GetPosition(), currentR, objects, proxyCargos);
+            
+            for (int i = 0; i < objects.Count(); i++)
+            {
+                Object obj = objects.Get(i);
+                if (!obj) continue;
+                if (!IsPlacedObject(obj)) continue;
+                if (DP_TerritoryConfig.Get().GetItemCategory(obj.GetType()) == category) currentCount++;
+            }
+        }
+        
         if (category == 1) baseLimit = levelDef.MaxStructures;
         if (category == 2) baseLimit = levelDef.MaxTents;
         if (category == 3) baseLimit = levelDef.MaxFurniture;
@@ -179,14 +224,6 @@ class DP_TerritoryManager
         // Вычисляем итоговый лимит: базовый + (базовый * процент / 100)
         bonusSlots = Math.Floor(baseLimit * totalBonusPercent / 100.0);
         maxLimit = baseLimit + bonusSlots;
-
-        for (i = 0; i < objects.Count(); i++)
-        {
-            obj = objects.Get(i);
-            if (!obj) continue;
-            if (!IsPlacedObject(obj)) continue;
-            if (DP_TerritoryConfig.Get().GetItemCategory(obj.GetType()) == category) currentCount++;
-        }
         
         if ((currentCount + 1) > maxLimit)
         {
